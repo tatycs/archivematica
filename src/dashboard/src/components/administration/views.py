@@ -29,6 +29,7 @@ from django.db.models import Max, Min
 from django.http import Http404, HttpResponseNotAllowed, HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.template import RequestContext
+from django.template.defaultfilters import filesizeformat
 from django.utils.six.moves import map
 from django.utils.translation import ugettext as _
 
@@ -176,18 +177,64 @@ def _atom_levels_of_description_sort_adjust(level_id, sortorder="promote"):
 
 
 def storage(request):
+    """Return storage service locations related with this pipeline.
+
+    Exclude locations for currently processing, AIP recovery and SS internal
+    purposes and disabled locations. Format used, quota and purpose values to
+    human readable form.
+    """
     try:
-        locations = storage_service.get_location(purpose="AS")
+        response_locations = storage_service.get_location()
     except:
         messages.warning(
             request,
             _(
-                "Error retrieving locations: is the storage server running? Please contact an administrator."
+                "Error retrieving locations: is the "
+                "storage server running? Please contact "
+                "an administrator."
             ),
         )
+        return render(request, "administration/locations.html")
 
-    system_directory_description = "Available storage"
-    return render(request, "administration/locations.html", locals())
+    # Currently processing, AIP recovery and SS internal locations
+    # are intentionally not included to not display them in the table.
+    purposes = {
+        "AS": _("AIP Storage"),
+        "DS": _("DIP Storage"),
+        "SD": _("FEDORA Deposits"),
+        "BL": _("Transfer Backlog"),
+        "TS": _("Transfer Source"),
+        "RP": _("Replicator"),
+    }
+
+    # Filter and format locations
+    locations = []
+    for loc in response_locations:
+        # Skip disabled locations
+        if not loc["enabled"]:
+            continue
+        # Skip unwanted purposes
+        if not loc["purpose"] or loc["purpose"] not in purposes.keys():
+            continue
+        # Only show usage of AS and DS locations
+        loc["show_usage"] = loc["purpose"] in ["AS", "DS"]
+        if loc["show_usage"]:
+            # Show unlimited for unset quotas
+            if not loc["quota"]:
+                loc["quota"] = _("unlimited")
+            # Format bytes to human readable filesize
+            else:
+                loc["quota"] = filesizeformat(loc["quota"])
+            if loc["used"]:
+                loc["used"] = filesizeformat(loc["used"])
+        # Format purpose
+        loc["purpose"] = purposes[loc["purpose"]]
+        locations.append(loc)
+
+    # Sort by purpose
+    locations.sort(key=lambda loc: loc["purpose"])
+
+    return render(request, "administration/locations.html", {"locations": locations})
 
 
 def usage(request):
@@ -380,21 +427,6 @@ def usage_clear(request, dir_id):
         return redirect("components.administration.views.usage")
     else:
         return HttpResponseNotAllowed()
-
-
-def sources(request):
-    try:
-        locations = storage_service.get_location(purpose="TS")
-    except:
-        messages.warning(
-            request,
-            _(
-                "Error retrieving locations: is the storage server running? Please contact an administrator."
-            ),
-        )
-
-    system_directory_description = "Available transfer source"
-    return render(request, "administration/locations.html", locals())
 
 
 def processing(request):

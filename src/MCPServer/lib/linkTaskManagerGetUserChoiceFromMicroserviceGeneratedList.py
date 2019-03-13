@@ -50,11 +50,12 @@ class linkTaskManagerGetUserChoiceFromMicroserviceGeneratedList(LinkTaskManager)
         if preConfiguredIndex is not None:
             self.jobChainLink.setExitMessage(Job.STATUS_COMPLETED_SUCCESSFULLY)
             self.proceedWithChoice(index=preConfiguredIndex, user_id=None)
-        else:
-            choicesAvailableForUnitsLock.acquire()
-            self.jobChainLink.setExitMessage(Job.STATUS_AWAITING_DECISION)
-            choicesAvailableForUnits[self.jobChainLink.UUID] = self
-            choicesAvailableForUnitsLock.release()
+            return
+
+        choicesAvailableForUnitsLock.acquire()
+        self.jobChainLink.setExitMessage(Job.STATUS_AWAITING_DECISION)
+        choicesAvailableForUnits[self.jobChainLink.UUID] = self
+        choicesAvailableForUnitsLock.release()
 
     def _populate_choices(self):
         self.choices = []

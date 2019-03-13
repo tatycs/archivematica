@@ -115,7 +115,6 @@ determineaipversionkeyexitcode_v0.0 = determine_aip_version_key_exit_code
 dipGenerationHelper = dip_generation_helper
 emailfailreport_v0.0 = email_fail_report
 verifymd5_v0.0 = verify_md5
-setsipquarantine_v0.0 = quarantine_sip
 archivematicaverifymets_v0.0 = verify_mets
 backupdip_v0.0 = backup_dip
 copyrecursive_v0.0 = copy_recursive

@@ -19,20 +19,13 @@
 # @subpackage MCPServer
 # @author Joseph Perry <joseph@artefactual.com>
 
-import datetime
 import logging
 import lxml.etree as etree
 import os
-import threading
-import time
 
 from utils import choice_unifier
 from linkTaskManager import LinkTaskManager
-from linkTaskManagerChoice import (
-    choicesAvailableForUnits,
-    choicesAvailableForUnitsLock,
-    waitingOnTimer,
-)
+from linkTaskManagerChoice import choicesAvailableForUnits, choicesAvailableForUnitsLock
 
 from dicts import ReplacementDict
 from main.models import DashboardSetting, Job, UserProfile
@@ -82,20 +75,18 @@ class linkTaskManagerReplacementDicFromChoice(LinkTaskManager):
 
         preConfiguredChain = self.checkForPreconfiguredXML()
         if preConfiguredChain is not None:
-            if preConfiguredChain != waitingOnTimer:
-                self.jobChainLink.setExitMessage(Job.STATUS_COMPLETED_SUCCESSFULLY)
-                rd = ReplacementDict(preConfiguredChain)
-                self.update_passvar_replacement_dict(rd)
-                self.jobChainLink.linkProcessingComplete(
-                    0, passVar=self.jobChainLink.passVar
-                )
-            else:
-                LOGGER.info("Waiting on delay to resume processing on unit %s", unit)
-        else:
-            choicesAvailableForUnitsLock.acquire()
-            self.jobChainLink.setExitMessage(Job.STATUS_AWAITING_DECISION)
-            choicesAvailableForUnits[self.jobChainLink.UUID] = self
-            choicesAvailableForUnitsLock.release()
+            self.jobChainLink.setExitMessage(Job.STATUS_COMPLETED_SUCCESSFULLY)
+            rd = ReplacementDict(preConfiguredChain)
+            self.update_passvar_replacement_dict(rd)
+            self.jobChainLink.linkProcessingComplete(
+                0, passVar=self.jobChainLink.passVar
+            )
+            return
+
+        choicesAvailableForUnitsLock.acquire()
+        self.jobChainLink.setExitMessage(Job.STATUS_AWAITING_DECISION)
+        choicesAvailableForUnits[self.jobChainLink.UUID] = self
+        choicesAvailableForUnitsLock.release()
 
     def _format_items(self, items):
         """Wrap replacement items with the ``%`` wildcard character."""
@@ -132,105 +123,41 @@ class linkTaskManagerReplacementDicFromChoice(LinkTaskManager):
         xmlFilePath = os.path.join(
             self.unit.currentPath.replace(
                 "%sharedPath%", django_settings.SHARED_DIRECTORY, 1
-            )
-            + "/",
+            ),
             django_settings.PROCESSING_XML_FILE,
         )
-
-        if os.path.isfile(xmlFilePath):
-            # For a list of items with pks:
-            # SELECT TasksConfigs.description, choiceAvailableAtLink, ' ' AS 'SPACE', MicroServiceChains.description, chainAvailable FROM MicroServiceChainChoice Join MicroServiceChains on MicroServiceChainChoice.chainAvailable = MicroServiceChains.pk Join MicroServiceChainLinks on MicroServiceChainLinks.pk = MicroServiceChainChoice.choiceAvailableAtLink Join TasksConfigs on TasksConfigs.pk = MicroServiceChainLinks.currentTask ORDER BY choiceAvailableAtLink desc;
-            try:
-                this_choice_point = choice_unifier.get(
-                    self.jobChainLink.pk, self.jobChainLink.pk
-                )
-                tree = etree.parse(xmlFilePath)
-                root = tree.getroot()
-                for preconfiguredChoice in root.findall(".//preconfiguredChoice"):
-                    if preconfiguredChoice.find("appliesTo").text == this_choice_point:
-                        desiredChoice = preconfiguredChoice.find("goToChain").text
-                        desiredChoice = choice_unifier.get(desiredChoice, desiredChoice)
-
-                        try:
-                            link = self.jobChainLink.workflow.get_link(
-                                this_choice_point
-                            )
-                        except KeyError:
-                            return
-                        for replacement in link.config["replacements"]:
-                            if replacement["id"] == desiredChoice:
-                                # In our JSON-encoded document, the items in
-                                # the replacements are not wrapped, do it here.
-                                # Needed by ReplacementDict.
-                                ret = self._format_items(replacement["items"])
-                                break
-                        else:
-                            return
-
-                        try:
-                            # <delay unitAtime="yes">30</delay>
-                            delayXML = preconfiguredChoice.find("delay")
-                            unitAtimeXML = None
-                            if delayXML:
-                                unitAtimeXML = delayXML.get("unitCtime")
-                            if (
-                                unitAtimeXML is not None
-                                and unitAtimeXML.lower() != "no"
-                            ):
-                                delaySeconds = int(delayXML.text)
-                                unitTime = os.path.getmtime(
-                                    self.unit.currentPath.replace(
-                                        "%sharedPath%",
-                                        django_settings.SHARED_DIRECTORY,
-                                        1,
-                                    )
-                                )
-                                nowTime = time.time()
-                                timeDifference = nowTime - unitTime
-                                timeToGo = delaySeconds - timeDifference
-                                LOGGER.info("Time to go: %s", timeToGo)
-                                self.jobChainLink.setExitMessage(
-                                    "Waiting till: "
-                                    + datetime.datetime.fromtimestamp(
-                                        (nowTime + timeToGo)
-                                    ).ctime()
-                                )
-                                rd = ReplacementDict(ret)
-                                if self.jobChainLink.passVar is not None:
-                                    if isinstance(
-                                        self.jobChainLink.passVar, ReplacementDict
-                                    ):
-                                        new = {}
-                                        new.update(self.jobChainLink.passVar.dic)
-                                        new.update(rd.dic)
-                                        rd.dic = new
-                                t = threading.Timer(
-                                    timeToGo,
-                                    self.jobChainLink.linkProcessingComplete,
-                                    args=[0, rd],
-                                    kwargs={},
-                                )
-                                t.daemon = True
-                                t.start()
-
-                                t2 = threading.Timer(
-                                    timeToGo,
-                                    self.jobChainLink.setExitMessage,
-                                    args=[Job.STATUS_COMPLETED_SUCCESSFULLY],
-                                    kwargs={},
-                                )
-                                t2.start()
-                                return waitingOnTimer
-
-                        except Exception:
-                            LOGGER.info("Error parsing XML", exc_info=True)
-
-            except Exception:
-                LOGGER.warning(
-                    "Error parsing xml at %s for pre-configured choice",
-                    xmlFilePath,
-                    exc_info=True,
-                )
+        if not os.path.isfile(xmlFilePath):
+            return None
+        try:
+            this_choice_point = choice_unifier.get(
+                self.jobChainLink.pk, self.jobChainLink.pk
+            )
+            tree = etree.parse(xmlFilePath)
+            root = tree.getroot()
+            for preconfiguredChoice in root.findall(".//preconfiguredChoice"):
+                if preconfiguredChoice.find("appliesTo").text != this_choice_point:
+                    continue
+                desiredChoice = preconfiguredChoice.find("goToChain").text
+                desiredChoice = choice_unifier.get(desiredChoice, desiredChoice)
+                try:
+                    link = self.jobChainLink.workflow.get_link(this_choice_point)
+                except KeyError:
+                    return
+                for replacement in link.config["replacements"]:
+                    if replacement["id"] == desiredChoice:
+                        # In our JSON-encoded document, the items in
+                        # the replacements are not wrapped, do it here.
+                        # Needed by ReplacementDict.
+                        ret = self._format_items(replacement["items"])
+                        break
+                else:
+                    return
+        except Exception:
+            LOGGER.warning(
+                "Error parsing xml at %s for pre-configured choice",
+                xmlFilePath,
+                exc_info=True,
+            )
         return ret
 
     def xmlify(self):

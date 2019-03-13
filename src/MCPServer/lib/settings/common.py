@@ -56,11 +56,6 @@ CONFIG_MAPPING = {
         "option": "rejectedDirectory",
         "type": "string",
     },
-    "wait_on_auto_approve": {
-        "section": "MCPServer",
-        "option": "waitOnAutoApprove",
-        "type": "int",
-    },
     "watch_directory_interval": {
         "section": "MCPServer",
         "option": "watchDirectoriesPollInterval",
@@ -237,7 +232,6 @@ REJECTED_DIRECTORY = config.get("rejected_directory")
 PROCESSING_DIRECTORY = config.get("processing_directory")
 PROCESSING_XML_FILE = config.get("processing_xml_file")
 GEARMAN_SERVER = config.get("gearman_server")
-WAIT_ON_AUTO_APPROVE = config.get("wait_on_auto_approve")
 WATCH_DIRECTORY_INTERVAL = config.get("watch_directory_interval")
 LIMIT_TASK_THREADS = config.get("limit_task_threads")
 SEARCH_ENABLED = config.get("search_enabled")

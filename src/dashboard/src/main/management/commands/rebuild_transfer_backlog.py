@@ -28,6 +28,7 @@ try:
 except ImportError:
     from pathlib2 import Path
 
+from dateutil.parser import parse
 from django.conf import settings as django_settings
 from django.core.management.base import CommandError
 from django.utils import six
@@ -40,7 +41,7 @@ import storageService
 from fpr.models import FormatVersion
 from components.rights.load import load_rights
 from main.management.commands import boolean_input, DashboardCommand
-from main.models import Agent, Transfer, FileFormatVersion, FileID
+from main.models import Agent, Directory, Transfer, FileFormatVersion, FileID
 
 import bagit
 
@@ -180,14 +181,37 @@ class Command(DashboardCommand):
 
 
 def _import_dir_from_fsentry(cmd, fsentry, transfer_uuid):
-    pass
+    """Populate ``Directory`` object from a ``FSEntry``.
+
+    TODO: metsrw.FSEntry does not expose PREMIS objects under <dmdSec> elemements.
+    TODO: premisrw.PREMISObject schema doesn't expose intellectual entity attributes.
+    TODO: Directory.enteredsystem uses ``auto_now_add``.
     """
-    Directory.objects.create(
-        uuid=uuid.uuid4(),  # TODO: what goes here?
+    try:
+        dmdsec = fsentry.dmdsecs[0]
+    except IndexError:
+        return
+    if dmdsec.contents.mdtype != "PREMIS:OBJECT":
+        return
+    premis_object = metsrw.plugins.premisrw.PREMISObject.fromtree(
+        dmdsec.contents.document
+    )
+    if premis_object.xsi_type != "premis:intellectualEntity":
+        return
+
+    identifier = premis_object.findtext("object_identifier/object_identifier_value")
+    original_name = premis_object.findtext("original_name")
+    if not identifier or not original_name:
+        return
+
+    directory = Directory.objects.create(
+        uuid=identifier,
         transfer_id=transfer_uuid,
-        originallocation="TODO",
-        currentlocation="TODO")
-    """
+        originallocation=original_name,
+        currentlocation=original_name,
+    )
+    directory.enteredsystem = parse(dmdsec.created)
+    directory.save()
 
 
 def _import_file_from_fsentry(cmd, fsentry, transfer_uuid):

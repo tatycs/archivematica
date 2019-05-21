@@ -241,76 +241,248 @@ def usage(request):
     """
     Return page summarizing storage usage
     """
-    usage_dirs = _usage_dirs()
+    usage_dirs = _get_shared_dirs(calculate_usage=True)
 
     context = {"usage_dirs": usage_dirs}
     return render(request, "administration/usage.html", context)
 
 
-def _usage_dirs(calculate_usage=True):
-    """
-    Provide usage data
+def _get_shared_dirs(calculate_usage=False):
+    """Get shared directories information.
 
-    Return maximum size and, optionally, current usage of a number of directories
+    Get information about the SHARED_DIRECTORY setting path, the mount point
+    path and a few subdirectories. Returns a dictionary where the key is a
+    descriptive handle and the value is another dictionary with the path,
+    description, the parent directory handle and optionally size and usage.
 
     :param bool calculate_usage: True if usage should be calculated.
-    :returns OrderedDict: Dict where key is a descriptive handle and value is a dict with the path, description, parent directory ID, and optionally size and usage.
+    :returns OrderedDict: Dict where key is a descriptive handle and value is a
+                          dict with the path, description, parent directory ID,
+                          and optionally size and usage.
     """
-    # Put spaces before directories contained by the spaces
-    #
-    # Description is optional, but either a path or a location purpose (used to
-    # look up the path) should be specified
-    #
-    # If only certain sudirectories within a path should be deleted, set
-    # 'subdirectories' to a list of them
-    dir_defs = (
-        ("shared", {"path": django_settings.SHARED_DIRECTORY}),
+    # Directories declaration:
+    # Place subdirectories bellow their parents to generate the path. The root
+    # directory is a placeholder where the mount point of the shared directory
+    # will be placed. Set `clear` to `True` if the directory can be emptied
+    # and, if only certain sudirectories within the directory should be deleted,
+    # set `subdirectories` to a list of them.
+    dirs = collections.OrderedDict(
         (
-            "dips",
-            {
-                "description": "DIP uploads",
-                "path": os.path.join("watchedDirectories", "uploadedDIPs"),
-                "contained_by": "shared",
-            },
-        ),
-        (
-            "rejected",
-            {"description": "Rejected", "path": "rejected", "contained_by": "shared"},
-        ),
-        (
-            "failed",
-            {"description": "Failed", "path": "failed", "contained_by": "shared"},
-        ),
-        (
-            "tmp",
-            {
-                "description": "Temporary file storage",
-                "path": "tmp",
-                "contained_by": "shared",
-            },
-        ),
+            ("root", {"description": "Total space", "clear": False}),
+            (
+                "shared",
+                {
+                    "description": "Shared",
+                    "path": django_settings.SHARED_DIRECTORY,
+                    "clear": False,
+                },
+            ),
+            (
+                "arrange",
+                {
+                    "description": "Arrange",
+                    "path": "arrange",
+                    "contained_by": "shared",
+                    "clear": False,
+                },
+            ),
+            (
+                "completed",
+                {
+                    "description": "Completed",
+                    "path": "completed",
+                    "contained_by": "shared",
+                    "clear": False,
+                },
+            ),
+            (
+                "transfers",
+                {
+                    "description": "Transfers",
+                    "path": "transfers",
+                    "contained_by": "completed",
+                    "clear": True,
+                },
+            ),
+            (
+                "currentlyProcessing",
+                {
+                    "description": "Currently processing",
+                    "path": "currentlyProcessing",
+                    "contained_by": "shared",
+                    "clear": False,
+                },
+            ),
+            (
+                "DIPbackups",
+                {
+                    "description": "DIP backups",
+                    "path": "DIPbackups",
+                    "contained_by": "shared",
+                    "clear": True,
+                },
+            ),
+            (
+                "failed",
+                {
+                    "description": "Failed",
+                    "path": "failed",
+                    "contained_by": "shared",
+                    "clear": True,
+                },
+            ),
+            (
+                "rejected",
+                {
+                    "description": "Rejected",
+                    "path": "rejected",
+                    "contained_by": "shared",
+                    "clear": True,
+                },
+            ),
+            (
+                "taskconfigs",
+                {
+                    "description": "Microservice tasks configurations",
+                    "path": "sharedMicroServiceTasksConfigs",
+                    "contained_by": "shared",
+                    "clear": False,
+                },
+            ),
+            (
+                "SIPbackups",
+                {
+                    "description": "SIP backups",
+                    "path": "SIPbackups",
+                    "contained_by": "shared",
+                    "clear": True,
+                },
+            ),
+            (
+                "tmp",
+                {
+                    "description": "Temporary file storage",
+                    "path": "tmp",
+                    "contained_by": "shared",
+                    "clear": True,
+                },
+            ),
+            (
+                "watched",
+                {
+                    "description": "Watched",
+                    "path": "watchedDirectories",
+                    "contained_by": "shared",
+                    "clear": False,
+                },
+            ),
+            (
+                "dips",
+                {
+                    "description": "DIP uploads",
+                    "path": "uploadedDIPs",
+                    "contained_by": "watched",
+                    "clear": True,
+                },
+            ),
+            (
+                "workflow",
+                {
+                    "description": "Workflow decisions",
+                    "path": "workFlowDecisions",
+                    "contained_by": "watched",
+                    "clear": False,
+                },
+            ),
+            (
+                "www",
+                {
+                    "description": "Storage",
+                    "path": "www",
+                    "contained_by": "shared",
+                    "clear": False,
+                },
+            ),
+            (
+                "AIPsStore",
+                {
+                    "description": "AIPs storage",
+                    "path": "AIPsStore",
+                    "contained_by": "www",
+                    "clear": False,
+                },
+            ),
+            (
+                "transferBacklog",
+                {
+                    "description": "Transfer backlog",
+                    "path": "transferBacklog",
+                    "contained_by": "AIPsStore",
+                    "clear": False,
+                },
+            ),
+            (
+                "tb_arrange",
+                {
+                    "description": "Arrange",
+                    "path": "arrange",
+                    "contained_by": "transferBacklog",
+                    "clear": False,
+                },
+            ),
+            (
+                "tb_originals",
+                {
+                    "description": "Originals",
+                    "path": "originals",
+                    "contained_by": "transferBacklog",
+                    "clear": False,
+                },
+            ),
+            (
+                "DIPsStore",
+                {
+                    "description": "DIPs storage",
+                    "path": "DIPsStore",
+                    "contained_by": "www",
+                    "clear": False,
+                },
+            ),
+        )
     )
 
-    dirs = collections.OrderedDict(dir_defs)
+    for name, dir_spec in dirs.items():
+        # Get the root of the shared directory
+        if name == "root":
+            dir_spec["path"] = _get_mount_point_path(dirs["shared"]["path"])
+            # Get root size if calculating usage
+            if calculate_usage:
+                dir_spec["size"] = _usage_check_directory_volume_size(dir_spec["path"])
 
-    # Resolve location paths and make relative paths absolute
-    for __, dir_spec in dirs.items():
+        # Make path absolute if contained
         if "contained_by" in dir_spec:
-            # If contained, make path absolute
             space = dir_spec["contained_by"]
             absolute_path = os.path.join(dirs[space]["path"], dir_spec["path"])
             dir_spec["path"] = absolute_path
 
-            if calculate_usage:
-                dir_spec["size"] = dirs[space]["size"]
-                dir_spec["used"] = _usage_get_directory_used_bytes(dir_spec["path"])
-        elif calculate_usage:
-            # Get size/usage of space
-            space_path = dir_spec["path"]
-            dir_spec["size"] = _usage_check_directory_volume_size(space_path)
-            dir_spec["used"] = _usage_get_directory_used_bytes(space_path)
+        # Calculate usage and use root size
+        if calculate_usage:
+            dir_spec["size"] = dirs["root"]["size"]
+            dir_spec["used"] = _usage_get_directory_used_bytes(dir_spec["path"])
 
     return dirs
+
+
+def _get_mount_point_path(path):
+    """
+    Get the mount point path from a directory.
+    """
+    path = os.path.realpath(os.path.abspath(path))
+    while path != os.path.sep:
+        if os.path.ismount(path):
+            return path
+        path = os.path.abspath(os.path.join(path, os.pardir))
+    return path
 
 
 def _usage_check_directory_volume_size(path):
@@ -347,7 +519,9 @@ def _usage_get_directory_used_bytes(path):
     :returns: usage in bytes
     """
     try:
-        output = subprocess.check_output(["du", "--bytes", "--summarize", path])
+        output = subprocess.check_output(
+            ["du", "--one-file-system", "--bytes", "--summarize", path]
+        )
         return output.split("\t")[0]
     except OSError:
         logger.exception("No such directory: %s", path)
@@ -361,9 +535,9 @@ def clear_context(request, dir_id):
     """
     Confirmation context for emptying a directory
 
-    :param dir_id: Key for the directory in _usage_dirs
+    :param dir_id: Key for the directory in _get_shared_dirs
     """
-    usage_dirs = _usage_dirs(False)
+    usage_dirs = _get_shared_dirs()
     prompt = "Clear " + usage_dirs[dir_id]["description"] + "?"
     cancel_url = reverse("components.administration.views.usage")
     return RequestContext(
@@ -377,10 +551,10 @@ def usage_clear(request, dir_id):
     """
     Empty a directory
 
-    :param dir_id: Descriptive shorthand for the directory, key for _usage_dirs
+    :param dir_id: Descriptive shorthand for the dir, key for _get_shared_dirs
     """
     if request.method == "POST":
-        usage_dirs = _usage_dirs(False)
+        usage_dirs = _get_shared_dirs()
         dir_info = usage_dirs[dir_id]
 
         # Prevent shared directory from being cleared

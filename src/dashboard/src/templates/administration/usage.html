@@ -18,31 +18,40 @@
 
       <h3>{% trans "Processing storage usage" %}</h3>
 
+      <p>{% trans "The processing storage location is configured by an administrator in this Archivematica pipeline configuration and in the Storage Service, Archivematica's back-end storage manager. The shared directory configuration path must match the currently processing location path used for this pipeline in the Storage Service for this page to work properly. This page displays usage information for the currently processing shared directory as a whole as well as specific folders within the shared directory." %}</p>
+
       <table class="table">
-        <tr>
-          <th>{% trans "Purpose" %}</th>
-          <th>{% trans "Path" %}</th>
-          <th>{% trans "Usage" %}</th>
-          <th>{% trans "Size" %}</th>
-          <th></th>
-        </tr>
-        {% for id, dir in usage_dirs.items %}
-        <tr>
-          <td>{{ dir.description }}</td>
-          <td>{{ dir.path }}</td>
-          <td>{{ dir.used|filesizeformat }}
-            ({% if dir.used %}{% widthratio dir.used dir.size 100 %}{% else %}0{% endif %}%)
-          </td>
-          <td>{{ dir.size|filesizeformat }}</td>
-          <td>
-            {% if dir.description %}
-            <form method='POST' action='{% url 'components.administration.views.usage_clear' id %}'>
-              <input type='submit' value='{% trans "Clear" %}' class='btn btn-default btn-sm'>
-            </form>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
+        <thead>
+          <tr>
+            <th>{% trans "Purpose" %}</th>
+            <th>{% trans "Usage" %}</th>
+            <th>{% trans "Path" %}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for id, dir in usage_dirs.items %}
+          <tr>
+            <td>{{ dir.description }}</td>
+            <td>
+              {% if id == "root" %}
+                {{ dir.used|filesizeformat }} / {{ dir.size|filesizeformat }}
+              {% else %}
+                {{ dir.used|filesizeformat }}
+              {% endif %}
+              ({% widthratio dir.used dir.size 100 %}%)
+            </td>
+            <td>{{ dir.path }}</td>
+            <td>
+              {% if dir.clear %}
+              <form method='POST' action='{% url 'components.administration.views.usage_clear' id %}'>
+                <input type='submit' value='{% trans "Clear" %}' class='btn btn-default btn-sm'>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
       </table>
 
     </div>

@@ -9,6 +9,7 @@ import urllib
 import time
 
 from django.conf import settings as django_settings
+from urllib3.util.retry import Retry
 
 # archivematicaCommon
 from archivematicaFunctions import get_setting
@@ -58,8 +59,17 @@ def _storage_service_url():
     return storage_service_url
 
 
-def _storage_api_session(timeout=django_settings.STORAGE_SERVICE_CLIENT_QUICK_TIMEOUT):
-    """Return a requests.Session with a customized adapter with timeout support."""
+def _storage_api_session(
+    timeout=django_settings.STORAGE_SERVICE_CLIENT_QUICK_TIMEOUT,
+    max_retries=requests.adapters.DEFAULT_RETRIES,
+):
+    """Return custom session with configurable timeouts and retries.
+
+    :param timeout: Default timeout configuration for the session. It is still
+        possible to override the value in the scope of individual requests.
+    :param max_retries: Retry configuration. See requests.adapters.HTTPAdapter
+        for more.
+    """
 
     class HTTPAdapterWithTimeout(requests.adapters.HTTPAdapter):
         def __init__(self, timeout=None, *args, **kwargs):
@@ -70,10 +80,12 @@ def _storage_api_session(timeout=django_settings.STORAGE_SERVICE_CLIENT_QUICK_TI
             kwargs["timeout"] = self.timeout
             return super(HTTPAdapterWithTimeout, self).send(*args, **kwargs)
 
+    adapter = HTTPAdapterWithTimeout(timeout=timeout, max_retries=max_retries)
+
     session = requests.session()
     session.auth = ApiKeyAuth()
-    session.mount("http://", HTTPAdapterWithTimeout(timeout=timeout))
-    session.mount("https://", HTTPAdapterWithTimeout(timeout=timeout))
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
     return session
 
 
@@ -218,9 +230,33 @@ def browse_location(uuid, path):
     return browse
 
 
+# Retry configuration used in ``wait_for_async``.
+#
+# This prepares the client for the potential situation where Storage Service
+# takes too long to attend requests. See issue #425 for more.
+# Also, make a limited number of attempts when the server returns an error.
+#
+# Sleep between retries when factor=2 and BACKOFF_MAX=120:
+# [0.0s, 4.0s, 8.0s, 16.0s, 32.0s, 64.0s, 128.0s, 128.0s, 128.0s, 128.0s, ...]
+#
+WAIT_FOR_ASYNC_RETRY = Retry(
+    connect=20,
+    read=20,
+    redirect=2,
+    status=2,
+    status_forcelist=(500, 502, 504),
+    backoff_factor=2,
+)
+
+
 def wait_for_async(response, poll_seconds=2, poll_timeout_seconds=600):
     """
     Poll for results on an async endpoint.
+
+    The request is done with a very generous timeout to prevent the function
+    to give up too early when Storage Service is too busy to respond. In
+    addition, we set up a retry strategy with many attempts and a high backoff
+    factor. See issue #425 for more.
 
     `response` should have a HTTP 202 (Accepted) status code, and is expected to
     contain a Location header telling us where to get our results from.
@@ -236,7 +272,9 @@ def wait_for_async(response, poll_seconds=2, poll_timeout_seconds=600):
     response.raise_for_status()
     poll_url = response.headers["Location"]
     while True:
-        poll_response = _storage_api_session(timeout=poll_timeout_seconds).get(poll_url)
+        poll_response = _storage_api_session(
+            timeout=poll_timeout_seconds, max_retries=WAIT_FOR_ASYNC_RETRY
+        ).get(poll_url)
         poll_response.raise_for_status()
         payload = poll_response.json()
         if not payload["completed"]:

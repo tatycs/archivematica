@@ -142,6 +142,7 @@ class NameSanitizer(object):
                 event_type="name cleanup",
                 event_datetime=self.date,
                 event_detail=self.EVENT_DETAIL,
+                event_outcome_detail="foobar",
             )
             events.append(sanitize_event)
 

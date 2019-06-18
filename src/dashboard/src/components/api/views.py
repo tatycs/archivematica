@@ -898,9 +898,9 @@ def unit_microservices(request, unit_uuid):
     group = request.GET.get("group")
     if group is not None:
         jobs = jobs.filter(microservicegroup=group)
-    chain_link = request.GET.get("chain_link")
-    if chain_link is not None:
-        jobs = jobs.filter(microservicechainlink=chain_link)
+    link_uuid = request.GET.get("link_uuid")
+    if link_uuid is not None:
+        jobs = jobs.filter(microservicechainlink=link_uuid)
     for job in jobs.prefetch_related("task_set"):
         tasks = [format_task(task) for task in job.task_set.all()]
         result.append(

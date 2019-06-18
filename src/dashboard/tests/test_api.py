@@ -378,7 +378,7 @@ class TestAPI(TestCase):
         job.save()
         sip_uuid = "3e1e56ed-923b-4b53-84fe-c5c1c0b0cf8e"
         resp = self.client.get(
-            "/api/unit/microservices/{}?chain_link={}".format(
+            "/api/unit/microservices/{}?link_uuid={}".format(
                 sip_uuid, "11111111-1111-1111-1111-111111111111"
             )
         )

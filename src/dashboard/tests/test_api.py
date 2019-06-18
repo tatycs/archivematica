@@ -327,23 +327,25 @@ class TestAPI(TestCase):
         payload = json.loads(resp.content)
         # payload contains a mapping for each microservice (job)
         assert len(payload) == 5
-        expected_job_uuids = [
+        expected_microservice_uuids = [
             "624581dc-ec01-4195-9da3-db0ab0ad1cc3",
             "a39d74e4-c42e-404b-8c29-dde873ca48ad",
             "bac0675d-44fe-4047-9713-f9ba9fe46eff",
             "c763fa11-0e36-4b93-a8c8-6f008b74a96a",
             "d2f99030-26b9-4746-b100-856779624934",
         ]
-        assert sorted([m["jobuuid"] for m in payload]) == expected_job_uuids
+        # sort the payload results by microservice uuid
+        sorted_payload = sorted(payload, key=lambda m: m["uuid"])
+        assert [m["uuid"] for m in sorted_payload] == expected_microservice_uuids
         # each payload mapping has information about the microservice and its tasks
-        microservice = payload[4]
-        assert microservice["jobuuid"] == "d2f99030-26b9-4746-b100-856779624934"
-        assert microservice["jobtype"] == "Check transfer directory for objects"
-        assert microservice["currentstep"] == 2
+        microservice = sorted_payload[4]
+        assert microservice["uuid"] == "d2f99030-26b9-4746-b100-856779624934"
+        assert microservice["type"] == "Check transfer directory for objects"
+        assert microservice["status"] == "COMPLETE"
         assert microservice["group"] == "Create SIP from Transfer"
-        assert microservice["chainlink"] is None
+        assert microservice["link_uuid"] is None
         assert microservice["tasks"] == [
-            {"taskuuid": "12345678-1234-1234-1234-123456789012", "exitcode": 0}
+            {"uuid": "12345678-1234-1234-1234-123456789012", "exit_code": 0}
         ]
 
     @e2e
@@ -357,35 +359,38 @@ class TestAPI(TestCase):
         payload = json.loads(resp.content)
         assert len(payload) == 1
         microservice = payload[0]
-        assert microservice["jobuuid"] == "b7902aae-ec5f-4290-a3d7-c47f844e8774"
-        assert microservice["jobtype"] == "Move to the rejected directory"
-        assert microservice["currentstep"] == 2
+        assert microservice["uuid"] == "b7902aae-ec5f-4290-a3d7-c47f844e8774"
+        assert microservice["type"] == "Move to the rejected directory"
+        assert microservice["status"] == "COMPLETE"
         assert microservice["group"] == "Reject transfer"
-        assert microservice["chainlink"] is None
+        assert microservice["link_uuid"] is None
         assert microservice["tasks"] == []
 
     @e2e
     def test_unit_microservices_searching_for_chain_link(self):
         load_fixture(["jobs-rejected.json"])
+        # add chain links to the fixture jobs
         job = Job.objects.get(jobuuid="59ace00b-4830-4314-a7d9-38fdbef64896")
-        job.microservicechainlink = "foo"
+        job.microservicechainlink = "11111111-1111-1111-1111-111111111111"
         job.save()
         job = Job.objects.get(jobuuid="b7902aae-ec5f-4290-a3d7-c47f844e8774")
-        job.microservicechainlink = "bar"
+        job.microservicechainlink = "22222222-2222-2222-2222-222222222222"
         job.save()
         sip_uuid = "3e1e56ed-923b-4b53-84fe-c5c1c0b0cf8e"
         resp = self.client.get(
-            "/api/unit/microservices/{}?chain_link={}".format(sip_uuid, "foo")
+            "/api/unit/microservices/{}?chain_link={}".format(
+                sip_uuid, "11111111-1111-1111-1111-111111111111"
+            )
         )
         assert resp.status_code == 200
         payload = json.loads(resp.content)
         assert len(payload) == 1
         microservice = payload[0]
-        assert microservice["jobuuid"] == "59ace00b-4830-4314-a7d9-38fdbef64896"
-        assert microservice["jobtype"] == "Create SIP(s)"
-        assert microservice["currentstep"] == 2
+        assert microservice["uuid"] == "59ace00b-4830-4314-a7d9-38fdbef64896"
+        assert microservice["type"] == "Create SIP(s)"
+        assert microservice["status"] == "COMPLETE"
         assert microservice["group"] == "Create SIP from Transfer"
-        assert microservice["chainlink"] == "foo"
+        assert microservice["link_uuid"] == "11111111-1111-1111-1111-111111111111"
         assert microservice["tasks"] == []
 
     @e2e
@@ -413,13 +418,13 @@ class TestAPI(TestCase):
         assert resp.status_code == 200
         payload = json.loads(resp.content)
         # payload is a mapping of task attributes
-        assert payload["taskuuid"] == "12345678-1234-1234-1234-123456789012"
-        assert payload["exitcode"] == 0
-        assert payload["fileuuid"] is None
-        assert payload["filename"] == ""
-        assert payload["createdtime"] == "2019-06-18T00:00:00"
-        assert payload["starttime"] == "2019-06-18T00:00:00"
-        assert payload["endtime"] is None
+        assert payload["uuid"] == "12345678-1234-1234-1234-123456789012"
+        assert payload["exit_code"] == 0
+        assert payload["file_uuid"] is None
+        assert payload["file_name"] == ""
+        assert payload["time_created"] == "2019-06-18T00:00:00"
+        assert payload["time_started"] == "2019-06-18T00:00:00"
+        assert payload["time_ended"] is None
 
 
 class TestProcessingConfigurationAPI(TestCase):

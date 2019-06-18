@@ -55,6 +55,13 @@ UUID_REGEX = re.compile(
     r"^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$",
     re.IGNORECASE,
 )
+MICROSERVICE_STATUS_CODE_LABELS = {
+    models.Job.STATUS_UNKNOWN: "UNKNOWN",
+    models.Job.STATUS_AWAITING_DECISION: "USER_INPUT",
+    models.Job.STATUS_COMPLETED_SUCCESSFULLY: "COMPLETE",
+    models.Job.STATUS_EXECUTING_COMMANDS: "PROCESSING",
+    models.Job.STATUS_FAILED: "FAILED",
+}
 
 
 def _api_endpoint(expected_methods):
@@ -868,15 +875,15 @@ def format_datetime(value):
 
 
 def format_task(task, detailed_output=False):
-    result = {"taskuuid": task.taskuuid, "exitcode": task.exitcode}
+    result = {"uuid": task.taskuuid, "exit_code": task.exitcode}
     if detailed_output:
         result.update(
             {
-                "fileuuid": task.fileuuid,
-                "filename": task.filename,
-                "createdtime": format_datetime(task.createdtime),
-                "starttime": format_datetime(task.starttime),
-                "endtime": format_datetime(task.endtime),
+                "file_uuid": task.fileuuid,
+                "file_name": task.filename,
+                "time_created": format_datetime(task.createdtime),
+                "time_started": format_datetime(task.starttime),
+                "time_ended": format_datetime(task.endtime),
             }
         )
     return result
@@ -898,11 +905,11 @@ def unit_microservices(request, unit_uuid):
         tasks = [format_task(task) for task in job.task_set.all()]
         result.append(
             {
-                "jobuuid": job.jobuuid,
-                "jobtype": job.jobtype,
-                "currentstep": job.currentstep,
+                "uuid": job.jobuuid,
+                "type": job.jobtype,
+                "status": MICROSERVICE_STATUS_CODE_LABELS.get(job.currentstep),
                 "group": job.microservicegroup,
-                "chainlink": job.microservicechainlink,
+                "link_uuid": job.microservicechainlink,
                 "tasks": tasks,
             }
         )

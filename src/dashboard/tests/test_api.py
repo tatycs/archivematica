@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import tempfile
@@ -11,7 +12,7 @@ from lxml import etree
 
 from components.api import views
 from components import helpers
-from main.models import SIP, Transfer
+from main.models import Job, SIP, Task, Transfer
 from processing import install_builtin_config
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -297,6 +298,128 @@ class TestAPI(TestCase):
             "message": "Fetched completed ingests successfully.",
             "results": ["4060ee97-9c3f-4822-afaf-ebdf838284c3"],
         }
+
+    @e2e
+    def test_unit_microservices_with_bogus_unit_uuid(self):
+        bogus_unit_uuid = "00000000-dfac-430d-93f4-f0453b18ad2f"
+        resp = self.client.get("/api/unit/microservices/{}".format(bogus_unit_uuid))
+        self._test_api_error(
+            resp,
+            status_code=400,
+            message=("No microservices found for unit: {}".format(bogus_unit_uuid)),
+        )
+
+    @e2e
+    def test_unit_microservices(self):
+        load_fixture(["jobs-transfer-backlog.json"])
+        sip_uuid = "3e1e56ed-923b-4b53-84fe-c5c1c0b0cf8e"
+        # fixtures don't have any tasks
+        Task.objects.create(
+            taskuuid="12345678-1234-1234-1234-123456789012",
+            job=Job.objects.get(jobuuid="d2f99030-26b9-4746-b100-856779624934"),
+            createdtime=datetime.datetime(2019, 6, 18, 0, 0),
+            starttime=datetime.datetime(2019, 6, 18, 0, 0),
+            endtime=datetime.datetime(2019, 6, 18, 0, 10),
+            exitcode=0,
+        )
+        resp = self.client.get("/api/unit/microservices/{}".format(sip_uuid))
+        assert resp.status_code == 200
+        payload = json.loads(resp.content)
+        # payload contains a mapping for each microservice (job)
+        assert len(payload) == 5
+        expected_job_uuids = [
+            "624581dc-ec01-4195-9da3-db0ab0ad1cc3",
+            "a39d74e4-c42e-404b-8c29-dde873ca48ad",
+            "bac0675d-44fe-4047-9713-f9ba9fe46eff",
+            "c763fa11-0e36-4b93-a8c8-6f008b74a96a",
+            "d2f99030-26b9-4746-b100-856779624934",
+        ]
+        assert sorted([m["jobuuid"] for m in payload]) == expected_job_uuids
+        # each payload mapping has information about the microservice and its tasks
+        microservice = payload[4]
+        assert microservice["jobuuid"] == "d2f99030-26b9-4746-b100-856779624934"
+        assert microservice["jobtype"] == "Check transfer directory for objects"
+        assert microservice["currentstep"] == 2
+        assert microservice["group"] == "Create SIP from Transfer"
+        assert microservice["chainlink"] is None
+        assert microservice["tasks"] == [
+            {"taskuuid": "12345678-1234-1234-1234-123456789012", "exitcode": 0}
+        ]
+
+    @e2e
+    def test_unit_microservices_searching_for_group(self):
+        load_fixture(["jobs-rejected.json"])
+        sip_uuid = "3e1e56ed-923b-4b53-84fe-c5c1c0b0cf8e"
+        resp = self.client.get(
+            "/api/unit/microservices/{}?group={}".format(sip_uuid, "Reject transfer")
+        )
+        assert resp.status_code == 200
+        payload = json.loads(resp.content)
+        assert len(payload) == 1
+        microservice = payload[0]
+        assert microservice["jobuuid"] == "b7902aae-ec5f-4290-a3d7-c47f844e8774"
+        assert microservice["jobtype"] == "Move to the rejected directory"
+        assert microservice["currentstep"] == 2
+        assert microservice["group"] == "Reject transfer"
+        assert microservice["chainlink"] is None
+        assert microservice["tasks"] == []
+
+    @e2e
+    def test_unit_microservices_searching_for_chain_link(self):
+        load_fixture(["jobs-rejected.json"])
+        job = Job.objects.get(jobuuid="59ace00b-4830-4314-a7d9-38fdbef64896")
+        job.microservicechainlink = "foo"
+        job.save()
+        job = Job.objects.get(jobuuid="b7902aae-ec5f-4290-a3d7-c47f844e8774")
+        job.microservicechainlink = "bar"
+        job.save()
+        sip_uuid = "3e1e56ed-923b-4b53-84fe-c5c1c0b0cf8e"
+        resp = self.client.get(
+            "/api/unit/microservices/{}?chain_link={}".format(sip_uuid, "foo")
+        )
+        assert resp.status_code == 200
+        payload = json.loads(resp.content)
+        assert len(payload) == 1
+        microservice = payload[0]
+        assert microservice["jobuuid"] == "59ace00b-4830-4314-a7d9-38fdbef64896"
+        assert microservice["jobtype"] == "Create SIP(s)"
+        assert microservice["currentstep"] == 2
+        assert microservice["group"] == "Create SIP from Transfer"
+        assert microservice["chainlink"] == "foo"
+        assert microservice["tasks"] == []
+
+    @e2e
+    def test_unit_task_with_bogus_task_uuid(self):
+        bogus_task_uuid = "00000000-dfac-430d-93f4-f0453b18ad2f"
+        resp = self.client.get("/api/unit/task/{}".format(bogus_task_uuid))
+        self._test_api_error(
+            resp,
+            status_code=400,
+            message=("Task with UUID {} does not exist".format(bogus_task_uuid)),
+        )
+
+    @e2e
+    def test_unit_task(self):
+        load_fixture(["jobs-transfer-backlog.json"])
+        # fixtures don't have any tasks
+        Task.objects.create(
+            taskuuid="12345678-1234-1234-1234-123456789012",
+            job=Job.objects.get(jobuuid="d2f99030-26b9-4746-b100-856779624934"),
+            createdtime=datetime.datetime(2019, 6, 18, 0, 0),
+            starttime=datetime.datetime(2019, 6, 18, 0, 0),
+            exitcode=0,
+        )
+        resp = self.client.get("/api/unit/task/12345678-1234-1234-1234-123456789012")
+        assert resp.status_code == 200
+        payload = json.loads(resp.content)
+        # payload is a mapping of task attributes
+        assert payload["taskuuid"] == "12345678-1234-1234-1234-123456789012"
+        assert payload["exitcode"] == 0
+        assert payload["fileuuid"] is None
+        assert payload["filename"] == ""
+        assert payload["createdtime"] == "2019-06-18T00:00:00"
+        assert payload["starttime"] == "2019-06-18T00:00:00"
+        assert payload["endtime"] is None
 
 
 class TestProcessingConfigurationAPI(TestCase):

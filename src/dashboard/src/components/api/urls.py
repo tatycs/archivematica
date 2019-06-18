@@ -62,4 +62,9 @@ urlpatterns = [
     ),
     url(r"v2beta/package", views.package),
     url(r"v2beta/validate/([-\w]+)", views.validate, name="validate"),
+    url(
+        r"unit/microservices/(?P<unit_uuid>" + settings.UUID_REGEX + ")",
+        views.unit_microservices,
+    ),
+    url(r"unit/task/(?P<task_uuid>" + settings.UUID_REGEX + ")", views.unit_task),
 ]

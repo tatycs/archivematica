@@ -858,3 +858,61 @@ def validate(request, validator_name):
             "Unexepected error in the validation process, see the logs for more details."
         )
     return _ok_response({"valid": True})
+
+
+def format_datetime(value):
+    try:
+        return value.strftime("%Y-%m-%dT%H:%M:%S")
+    except AttributeError:
+        pass
+
+
+def format_task(task, detailed_output=False):
+    result = {"taskuuid": task.taskuuid, "exitcode": task.exitcode}
+    if detailed_output:
+        result.update(
+            {
+                "fileuuid": task.fileuuid,
+                "filename": task.filename,
+                "createdtime": format_datetime(task.createdtime),
+                "starttime": format_datetime(task.starttime),
+                "endtime": format_datetime(task.endtime),
+            }
+        )
+    return result
+
+
+@_api_endpoint(expected_methods=["GET"])
+def unit_microservices(request, unit_uuid):
+    jobs = models.Job.objects.filter(sipuuid=unit_uuid)
+    if not jobs.count():
+        return _error_response("No microservices found for unit: {}".format(unit_uuid))
+    result = []
+    group = request.GET.get("group")
+    if group is not None:
+        jobs = jobs.filter(microservicegroup=group)
+    chain_link = request.GET.get("chain_link")
+    if chain_link is not None:
+        jobs = jobs.filter(microservicechainlink=chain_link)
+    for job in jobs.prefetch_related("task_set"):
+        tasks = [format_task(task) for task in job.task_set.all()]
+        result.append(
+            {
+                "jobuuid": job.jobuuid,
+                "jobtype": job.jobtype,
+                "currentstep": job.currentstep,
+                "group": job.microservicegroup,
+                "chainlink": job.microservicechainlink,
+                "tasks": tasks,
+            }
+        )
+    return helpers.json_response(result)
+
+
+@_api_endpoint(expected_methods=["GET"])
+def unit_task(request, task_uuid):
+    try:
+        task = models.Task.objects.get(taskuuid=task_uuid)
+    except models.Task.DoesNotExist:
+        return _error_response("Task with UUID {} does not exist".format(task_uuid))
+    return helpers.json_response(format_task(task, detailed_output=True))
